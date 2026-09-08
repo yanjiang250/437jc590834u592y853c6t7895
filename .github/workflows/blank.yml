@@ -27,9 +27,9 @@ jobs:
         run: |
           UUID=$(cat /proc/sys/kernel/random/uuid)
           echo "uuid=$UUID" >> $GITHUB_OUTPUT
-          echo "Generated UUID: $UUID"
+          echo "UUID: $UUID"
 
-      - name: 内网穿透
+      - name: 生成临时隧道
         id: tunnel
         run: |
           cloudflared tunnel --url http://localhost:80 > /tmp/cloudflared.log 2>&1 &
@@ -40,18 +40,13 @@ jobs:
                 HOST=$(echo $TUNNEL_URL | sed 's|https://||')
                 echo "tunnel_url=$TUNNEL_URL" >> $GITHUB_OUTPUT
                 echo "host=$HOST" >> $GITHUB_OUTPUT
-                echo "Tunnel URL: $TUNNEL_URL"
+                echo "临时隧道URL: $TUNNEL_URL"
                 break
               fi
             fi
             sleep 2
           done
           TUNNEL_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cloudflared.log | head -1)
-          if [ -z "$TUNNEL_URL" ]; then
-            echo "Failed to get tunnel URL"
-            cat /tmp/cloudflared.log
-            exit 1
-          fi
           HOST=$(echo $TUNNEL_URL | sed 's|https://||')
           echo "tunnel_url=$TUNNEL_URL" >> $GITHUB_OUTPUT
           echo "host=$HOST" >> $GITHUB_OUTPUT
@@ -115,7 +110,7 @@ jobs:
             cat /tmp/xray.log
             exit 1
           fi
-          echo "Xray started"
+          echo "Xray启动成功"
 
       - name: 输出节点链接
         run: |
@@ -123,10 +118,10 @@ jobs:
           HOST="${{ steps.tunnel.outputs.host }}"
           NODE="vless://${UUID}@${HOST}:80?encryption=none&security=none&type=ws&host=${HOST}&path=%2F#github-workflows"
           echo "=========================================="
-          echo "节点链接 / Node Link:"
+          echo "节点链接:"
           echo "$NODE"
           echo "=========================================="
-          echo "地址: $HOST （强烈建议换成Cloudflare的优选IP或优选域名）"
+          echo "地址: $HOST （强烈建议使用Cloudflare的优选IP或优选域名）"
           echo "端口: 80"
           echo "UUID: $UUID"
           echo "传输协议: ws"
@@ -137,62 +132,5 @@ jobs:
 
       - name: 保活
         run: |
-          echo "Keeping alive until timeout (max 6 hours)..."
-          while true; do
-            XRAY_OK=0
-            CF_OK=0
-            if pgrep -x "xray" > /dev/null && ss -tlnp | grep -q ':80 '; then
-              XRAY_OK=1
-            fi
-            if pgrep -f "cloudflared tunnel" > /dev/null; then
-              CF_OK=1
-            fi
-            if [ $XRAY_OK -eq 0 ] || [ $CF_OK -eq 0 ]; then
-              echo "检测到异常，开始按正确顺序重启..."
-              sudo pkill -x xray || true
-              pkill -f "cloudflared tunnel" || true
-              sleep 2
-              sudo nohup xray -config /tmp/config.json > /tmp/xray.log 2>&1 &
-              for i in {1..20}; do
-                if ss -tlnp | grep -q ':80 '; then
-                  echo "Xray 已重新监听 80 端口"
-                  break
-                fi
-                sleep 1
-              done
-              if ! ss -tlnp | grep -q ':80 '; then
-                echo "Xray 重启后仍未监听端口"
-                cat /tmp/xray.log
-              else
-                cloudflared tunnel --url http://localhost:80 > /tmp/cloudflared.log 2>&1 &
-                for i in {1..30}; do
-                  if grep -q "trycloudflare.com" /tmp/cloudflared.log; then
-                    NEW_HOST=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cloudflared.log | head -1 | sed 's|https://||')
-                    if [ -n "$NEW_HOST" ]; then
-                      echo "新隧道 Host: $NEW_HOST"
-                      sed -i "s/\"host\": \".*\"/\"host\": \"$NEW_HOST\"/" /tmp/config.json
-                      sudo pkill -x xray || true
-                      sleep 1
-                      sudo nohup xray -config /tmp/config.json > /tmp/xray.log 2>&1 &
-                      for j in {1..15}; do
-                        if ss -tlnp | grep -q ':80 '; then
-                          break
-                        fi
-                        sleep 1
-                      done
-                      UUID="${{ steps.uuid.outputs.uuid }}"
-                      NODE="vless://${UUID}@${NEW_HOST}:80?encryption=none&security=none&type=ws&host=${NEW_HOST}&path=%2F#GH-Actions-VLESS"
-                      echo "=========================================="
-                      echo "更新后的节点链接 / Updated Node Link:"
-                      echo "$NODE"
-                      echo "=========================================="
-                      break
-                    fi
-                  fi
-                  sleep 2
-                done
-              fi
-            fi
-            sleep 60
-            date
-          done
+          END=$(( $(date +%s) + 21600 ))
+                  while [ $(date +%s) -lt $END ]; do sleep 60; done
