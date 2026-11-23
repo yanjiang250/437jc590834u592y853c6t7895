@@ -116,18 +116,19 @@ jobs:
         run: |
           UUID="${{ steps.uuid.outputs.uuid }}"
           HOST="${{ steps.tunnel.outputs.host }}"
-          NODE="vless://${UUID}@${HOST}:80?encryption=none&security=none&type=ws&host=${HOST}&path=%2F#github-workflows"
+          NODE="vless://${UUID}@104.18.33.0:443?encryption=none&security=tls&sni=${HOST}&type=ws&host=${HOST}&path=%2F#${HOST}"
           echo "=========================================="
           echo "节点链接:"
           echo "$NODE"
           echo "=========================================="
-          echo "地址: $HOST （强烈建议使用Cloudflare的优选IP或优选域名）"
-          echo "端口: 80"
+          echo "地址: 104.18.33.0"
+          echo "端口: 443"
           echo "UUID: $UUID"
           echo "传输协议: ws"
           echo "伪装域名: $HOST"
           echo "路径: /"
-          echo "TLS: 关闭"
+          echo "TLS: 开启"
+          echo "SNI: $HOST"
           echo "=========================================="
 
       - name: 保活
